@@ -35,6 +35,7 @@ import {
   type ManifestLabelValidationStatusMap,
   type ValidationStatusResult,
 } from './selectors/validationResult';
+import { selectSigningCertificateChain } from './certificateChain';
 import { selectWeb3 } from './selectors/web3Info';
 import { selectWebsite } from './selectors/website';
 import { loadThumbnail, type ThumbnailInfo } from './thumbnail';
@@ -42,6 +43,13 @@ import type { Disposable } from './types';
 
 const MANIFEST_STORE_MIME_TYPE = 'application/x-c2pa-manifest-store';
 const dbg = debug('lib:asset');
+
+// Extend c2pa module to include eqty.manifest assertion type
+declare module 'c2pa' {
+  interface ExtendedAssertions {
+    'eqty.manifest': unknown;
+  }
+}
 
 /**
  * Asset data required for the verify UI.
@@ -55,6 +63,16 @@ export type AssetData = {
   title: string | null;
   dataType: 'model' | null;
   validationResult: ValidationStatusResult | null;
+  untrustedMessageOverride: string | null;
+  unrecognizedLabelOverride: string | null;
+  attestationCertificates:
+    | {
+        commonName: string;
+        organizationalUnit: string | null;
+        attestationType: string | null;
+      }[]
+    | null;
+  attestationManifest: unknown | null;
 };
 
 interface EditsAndActivityInferenceResponse {
@@ -94,6 +112,19 @@ export type DisposableAssetDataMap = Disposable<{
 }>;
 
 export const ROOT_ID = '0';
+const EQTY_ATTESTATION_MESSAGE = 'EQTY Attestation';
+const EQTY_ATTESTED_LABEL = 'EQTY Attested';
+
+interface EqtyAttestationInfo {
+  message: string;
+  label: string;
+  certificates: {
+    commonName: string;
+    organizationalUnit: string | null;
+    attestationType: string | null;
+  }[];
+  manifest: unknown | null;
+}
 
 export function getMediaCategoryFromMimeType(mimeType: string): MediaCategory {
   const prefix = mimeType?.split('/')[0] as MediaCategory;
@@ -156,6 +187,14 @@ export async function resultToAssetMap({
   const { hasError, hasOtgp } = rootValidationResult ?? {};
   const isManifest = source.blob?.type === MANIFEST_STORE_MIME_TYPE;
   const id = ROOT_ID;
+  const eqtyManifestAssertion = manifestStore?.activeManifest
+    ? getEqtyManifestAssertion(manifestStore.activeManifest)
+    : null;
+  const eqtyAttestationInfo = await getEqtyAttestationInfo(
+    source.blob,
+    rootValidationResult,
+    eqtyManifestAssertion,
+  );
 
   dbg('resultToAssetMap input:', {
     manifestStore,
@@ -189,6 +228,10 @@ export async function resultToAssetMap({
       manifestData: null,
       dataType: null,
       validationResult: rootValidationResult,
+      untrustedMessageOverride: eqtyAttestationInfo?.message ?? null,
+      unrecognizedLabelOverride: eqtyAttestationInfo?.label ?? null,
+      attestationCertificates: eqtyAttestationInfo?.certificates ?? null,
+      attestationManifest: eqtyAttestationInfo?.manifest ?? null,
     };
 
     // Return early if we don't have a manifestStore
@@ -258,6 +301,10 @@ export async function resultToAssetMap({
       manifestData: await getManifestData(manifest),
       dataType: null,
       validationResult: rootValidationResult,
+      untrustedMessageOverride: eqtyAttestationInfo?.message ?? null,
+      unrecognizedLabelOverride: eqtyAttestationInfo?.label ?? null,
+      attestationCertificates: eqtyAttestationInfo?.certificates ?? null,
+      attestationManifest: eqtyAttestationInfo?.manifest ?? null,
     };
 
     if (thumbnail?.dispose) {
@@ -314,6 +361,10 @@ export async function resultToAssetMap({
       manifestData: await getManifestData(ingredient.manifest),
       dataType: getIngredientDataType(ingredient),
       validationResult,
+      untrustedMessageOverride: null,
+      unrecognizedLabelOverride: null,
+      attestationCertificates: null,
+      attestationManifest: null,
     };
 
     if (thumbnail?.dispose) {
@@ -450,4 +501,107 @@ export async function resultToAssetMap({
     assetMap,
     dispose,
   };
+}
+
+async function getEqtyAttestationInfo(
+  blob: Blob | null,
+  validationResult: ValidationStatusResult | null,
+  eqtyManifestAssertion: unknown | null,
+): Promise<EqtyAttestationInfo | null> {
+  if (!blob || validationResult?.statusCode !== 'unrecognized') {
+    return null;
+  }
+
+  try {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const chain = selectSigningCertificateChain(bytes);
+    const root = chain?.at(-1);
+
+    if (!root) {
+      return null;
+    }
+
+    const hasDidKeySubject = [
+      root.commonName ?? '',
+      ...root.organizationalUnits,
+    ]
+      .filter(Boolean)
+      .some((value) => value.startsWith('did:key:z'));
+
+    if (!hasDidKeySubject || !chain) {
+      return null;
+    }
+
+    return {
+      message: EQTY_ATTESTATION_MESSAGE,
+      label: EQTY_ATTESTED_LABEL,
+      certificates: chain
+        .filter((cert) => !!cert.commonName)
+        .map((cert) => {
+          const commonName = cert.commonName as string;
+
+          return {
+            commonName,
+            organizationalUnit: cert.organizationalUnits[0] ?? null,
+            attestationType: getEqtyDidRegistrationType(
+              eqtyManifestAssertion,
+              commonName,
+            ),
+          };
+        }),
+      manifest: eqtyManifestAssertion,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getEqtyManifestAssertion(manifest: Manifest): unknown | null {
+  const assertions = manifest.assertions.get('eqty.manifest');
+
+  if (!assertions || assertions.length === 0) {
+    return null;
+  }
+
+  return assertions.map((assertion) => assertion?.data).find(Boolean) ?? null;
+}
+
+function getEqtyDidRegistrationType(
+  manifest: unknown,
+  did: string,
+): string | null {
+  if (!manifest || typeof manifest !== 'object') {
+    return null;
+  }
+
+  const statements = (manifest as { statements?: Record<string, unknown> })
+    .statements;
+
+  if (!statements || typeof statements !== 'object') {
+    return null;
+  }
+
+  for (const statement of Object.values(statements)) {
+    if (!statement || typeof statement !== 'object') {
+      continue;
+    }
+
+    const didRegistration = statement as {
+      '@type'?: string;
+      did?: string;
+      vcomp?: { '@type'?: string } | null;
+    };
+
+    if (didRegistration['@type'] !== 'DidRegistration') {
+      continue;
+    }
+
+    if (didRegistration.did !== did) {
+      continue;
+    }
+
+    return didRegistration.vcomp?.['@type'] ?? null;
+  }
+
+  return null;
 }

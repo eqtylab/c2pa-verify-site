@@ -4,21 +4,25 @@
 
 <script lang="ts">
   import Alert from '$assets/svg/monochrome/alert.svg?component';
+  import Attestation from '$assets/svg/monochrome/attestation.svg?component';
   import Info from '$assets/svg/monochrome/info.svg?component';
   import IconContentRow from '../IconContentRow/IconContentRow.svelte';
 
-  export let type: 'info' | 'warning' | 'error' = 'info';
+  export let type: 'info' | 'warning' | 'error' | 'eqty' = 'info';
 </script>
 
 <div
   class="mx-5 mb-5 rounded p-2.5 text-white"
   class:bg-gray-600={type === 'info'}
   class:bg-orange-700={type === 'warning'}
+  class:bg-blue-500={type === 'eqty'}
   class:bg-red-1000={type === 'error'}>
   <IconContentRow>
     <svelte:fragment slot="icon">
       {#if type === 'info'}
         <Info class="h-4 w-4" />
+      {:else if type === 'eqty'}
+        <Attestation class="h-4 w-4" />
       {:else}
         <Alert class="h-4 w-4" />
       {/if}

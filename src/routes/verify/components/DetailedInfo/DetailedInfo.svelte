@@ -14,6 +14,7 @@
   import BigAssetInfo from '../AssetInfo/BigAssetInfo.svelte';
   import ErrorBanner from '../ErrorBanner/ErrorBanner.svelte';
   import ThumbnailSection from '../Thumbnail/ThumbnailSection.svelte';
+  import AttestationModal from '../modals/AttestationModal/AttestationModal.svelte';
   import LightboxModal from '../modals/LightboxModal/LightboxModal.svelte';
   import AboutSection from './AboutSection/AboutSection.svelte';
   import CameraCaptureSection from './CameraCaptureSection/CameraCaptureSection.svelte';
@@ -34,6 +35,13 @@
   $: isUntrusted = statusCode === 'unrecognized';
   $: manifestData = isInvalid ? null : $assetData.manifestData;
   $: title = $assetData.title ?? $_('asset.defaultTitle');
+  $: untrustedMessage =
+    $assetData.untrustedMessageOverride ?? $_('error.untrusted');
+  $: untrustedBannerType = (
+    $assetData.untrustedMessageOverride ? 'eqty' : 'warning'
+  ) as 'eqty' | 'warning';
+  $: hasAttestationDetails =
+    ($assetData.attestationCertificates?.length ?? 0) > 0;
 
   const dispatch = createEventDispatcher();
   const { hierarchyView } = verifyStore;
@@ -79,6 +87,15 @@
       });
     }
   }
+
+  function handleAttestationClick() {
+    if (hasAttestationDetails) {
+      openModal(AttestationModal, {
+        certificates: $assetData.attestationCertificates ?? [],
+        manifest: $assetData.attestationManifest,
+      });
+    }
+  }
 </script>
 
 <div
@@ -104,8 +121,19 @@
     ><Body><span class="text-white">{$_('error.invalid')}</span></Body
     ></ErrorBanner>
 {:else if isUntrusted}
-  <ErrorBanner type="warning"
-    ><Body><span class="text-white">{$_('error.untrusted')}</span></Body
+  <ErrorBanner type={untrustedBannerType}
+    ><Body
+      ><span class="text-white">
+        {#if hasAttestationDetails}
+          <button
+            class="underline underline-offset-2"
+            on:click={handleAttestationClick}>
+            {untrustedMessage}
+          </button>
+        {:else}
+          {untrustedMessage}
+        {/if}
+      </span></Body
     ></ErrorBanner>
 {/if}
 <div bind:this={thumbnailElement}>

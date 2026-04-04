@@ -2,6 +2,7 @@
    Copyright 2021-2024 Adobe, Copyright 2025 The C2PA Contributors
 -->
 <script lang="ts">
+  import Attestation from '$assets/svg/monochrome/attestation.svg?component';
   import L1Icon from '$assets/svg/color/cr-icon-fill.svg?component';
   import L1Invalid from '$assets/svg/color/validation-invalid.svg?component';
   import L1Unrecognized from '$assets/svg/color/validation-unrecognized.svg?component';
@@ -22,6 +23,9 @@
   $: statusCode = validationResult?.statusCode;
   $: hasCredentials =
     !!$assetStore.manifestData?.signatureInfo?.cert_serial_number;
+  $: unrecognizedLabel =
+    $assetStore.unrecognizedLabelOverride ?? $_('assetInfo.unrecognized');
+  $: isEqtyAttested = !!$assetStore.unrecognizedLabelOverride;
 </script>
 
 {#if statusCode == 'invalid'}
@@ -37,13 +41,21 @@
   </TreeL1>
 {:else if statusCode === 'unrecognized'}
   <TreeL1 {assetStore} {parent} {transformScale}>
-    <L1Unrecognized
-      width="{L1IconSize}rem"
-      height="{L1IconSize}rem"
-      class="z-10 me-2 mt-1"
-      slot="icon" />
+    {#if isEqtyAttested}
+      <Attestation
+        width="{L1IconSize}rem"
+        height="{L1IconSize}rem"
+        class="z-10 me-2 mt-1"
+        slot="icon" />
+    {:else}
+      <L1Unrecognized
+        width="{L1IconSize}rem"
+        height="{L1IconSize}rem"
+        class="z-10 me-2 mt-1"
+        slot="icon" />
+    {/if}
     <svelte:fragment slot="string">
-      {$_('assetInfo.unrecognized')}
+      {unrecognizedLabel}
     </svelte:fragment>
   </TreeL1>
 {:else if statusCode === 'valid' && hasCredentials}
