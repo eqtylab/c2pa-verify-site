@@ -3,7 +3,7 @@
 import { X509Certificate } from '@peculiar/x509';
 
 export interface EmbeddedCertificate {
-  certificate: X509Certificate;
+  certificate: X509Certificate | null;
   derBytes: Uint8Array;
   subject: string;
   issuer: string;
@@ -57,6 +57,254 @@ function readDerLength(
     headerLength: 1 + octetCount,
     contentLength,
   };
+}
+
+interface DerNode {
+  tag: number;
+  headerLength: number;
+  contentLength: number;
+  start: number;
+  contentStart: number;
+  contentEnd: number;
+  end: number;
+}
+
+function readDerNode(bytes: Uint8Array, offset: number): DerNode | null {
+  const tag = bytes[offset];
+
+  if (tag === undefined) {
+    return null;
+  }
+
+  const length = readDerLength(bytes, offset + 1);
+
+  if (!length) {
+    return null;
+  }
+
+  const headerLength = 1 + length.headerLength;
+  const contentStart = offset + headerLength;
+  const contentEnd = contentStart + length.contentLength;
+
+  if (contentEnd > bytes.length) {
+    return null;
+  }
+
+  return {
+    tag,
+    headerLength,
+    contentLength: length.contentLength,
+    start: offset,
+    contentStart,
+    contentEnd,
+    end: contentEnd,
+  };
+}
+
+function decodeOid(bytes: Uint8Array): string | null {
+  if (bytes.length === 0) {
+    return null;
+  }
+
+  const first = bytes[0];
+  const parts = [Math.floor(first / 40), first % 40];
+  let current = 0;
+
+  for (let idx = 1; idx < bytes.length; idx++) {
+    current = (current << 7) | (bytes[idx] & 0x7f);
+
+    if ((bytes[idx] & 0x80) === 0) {
+      parts.push(current);
+      current = 0;
+    }
+  }
+
+  if (current !== 0) {
+    return null;
+  }
+
+  return parts.join('.');
+}
+
+function decodeDerString(tag: number, bytes: Uint8Array): string | null {
+  // Common X.509 DN string types.
+  if (![0x0c, 0x13, 0x14, 0x16, 0x1e].includes(tag)) {
+    return null;
+  }
+
+  if (tag === 0x1e) {
+    if (bytes.length % 2 !== 0) {
+      return null;
+    }
+
+    let value = '';
+
+    for (let idx = 0; idx < bytes.length; idx += 2) {
+      value += String.fromCharCode((bytes[idx] << 8) | bytes[idx + 1]);
+    }
+
+    return value;
+  }
+
+  return new TextDecoder().decode(bytes);
+}
+
+function parseDistinguishedName(bytes: Uint8Array): string | null {
+  const nameNode = readDerNode(bytes, 0);
+
+  if (!nameNode || nameNode.tag !== 0x30 || nameNode.end !== bytes.length) {
+    return null;
+  }
+
+  const oidLabels: Record<string, string> = {
+    '2.5.4.3': 'CN',
+    '2.5.4.6': 'C',
+    '2.5.4.7': 'L',
+    '2.5.4.8': 'ST',
+    '2.5.4.10': 'O',
+    '2.5.4.11': 'OU',
+  };
+  const parts: string[] = [];
+  let offset = nameNode.contentStart;
+
+  while (offset < nameNode.contentEnd) {
+    const setNode = readDerNode(bytes, offset);
+
+    if (!setNode || setNode.tag !== 0x31) {
+      return null;
+    }
+
+    let setOffset = setNode.contentStart;
+
+    while (setOffset < setNode.contentEnd) {
+      const attrNode = readDerNode(bytes, setOffset);
+
+      if (!attrNode || attrNode.tag !== 0x30) {
+        return null;
+      }
+
+      const oidNode = readDerNode(bytes, attrNode.contentStart);
+      const valueNode = oidNode ? readDerNode(bytes, oidNode.end) : null;
+
+      if (!oidNode || oidNode.tag !== 0x06 || !valueNode) {
+        return null;
+      }
+
+      const oid = decodeOid(
+        bytes.slice(oidNode.contentStart, oidNode.contentEnd),
+      );
+      const value = decodeDerString(
+        valueNode.tag,
+        bytes.slice(valueNode.contentStart, valueNode.contentEnd),
+      );
+
+      if (!oid || value == null) {
+        return null;
+      }
+
+      const key = oidLabels[oid] ?? oid;
+      const escapedValue = value.replace(/\\/g, '\\\\').replace(/,/g, '\\,');
+      parts.push(`${key}=${escapedValue}`);
+      setOffset = attrNode.end;
+    }
+
+    offset = setNode.end;
+  }
+
+  return parts.join(', ');
+}
+
+function parsePartialX509Certificate(
+  derBytes: Uint8Array,
+): Omit<
+  EmbeddedCertificate,
+  | 'certificate'
+  | 'derBytes'
+  | 'organizationalUnits'
+  | 'commonName'
+  | 'isSelfSigned'
+> | null {
+  const outerNode = readDerNode(derBytes, 0);
+
+  if (
+    !outerNode ||
+    outerNode.tag !== 0x30 ||
+    outerNode.end !== derBytes.length
+  ) {
+    return null;
+  }
+
+  const tbsNode = readDerNode(derBytes, outerNode.contentStart);
+
+  if (!tbsNode || tbsNode.tag !== 0x30) {
+    return null;
+  }
+
+  let offset = tbsNode.contentStart;
+  let node = readDerNode(derBytes, offset);
+
+  if (!node) {
+    return null;
+  }
+
+  // Optional version field: [0] EXPLICIT Version
+  if (node.tag === 0xa0) {
+    offset = node.end;
+    node = readDerNode(derBytes, offset);
+  }
+
+  if (!node) {
+    return null;
+  }
+
+  // serialNumber
+  offset = node.end;
+  node = readDerNode(derBytes, offset);
+
+  if (!node) {
+    return null;
+  }
+
+  // signature
+  offset = node.end;
+  node = readDerNode(derBytes, offset);
+
+  if (!node) {
+    return null;
+  }
+
+  // issuer
+  const issuerBytes = derBytes.slice(node.start, node.end);
+  const issuer = parseDistinguishedName(issuerBytes);
+
+  if (!issuer) {
+    return null;
+  }
+
+  // validity
+  offset = node.end;
+  node = readDerNode(derBytes, offset);
+
+  if (!node) {
+    return null;
+  }
+
+  offset = node.end;
+  node = readDerNode(derBytes, offset);
+
+  if (!node) {
+    return null;
+  }
+
+  // subject
+  const subjectBytes = derBytes.slice(node.start, node.end);
+  const subject = parseDistinguishedName(subjectBytes);
+
+  if (!subject) {
+    return null;
+  }
+
+  return { subject, issuer };
 }
 
 function splitDistinguishedName(name: string): string[] {
@@ -189,7 +437,29 @@ export function extractEmbeddedCertificates(
       seen.add(fingerprint);
       idx = candidate.end - 1;
     } catch {
-      // Some DER sequences in the file are not certificates.
+      const partialCert = parsePartialX509Certificate(derBytes);
+
+      if (!partialCert) {
+        // Some DER sequences in the file are not certificates.
+        continue;
+      }
+
+      certs.push({
+        certificate: null,
+        derBytes,
+        subject: partialCert.subject,
+        issuer: partialCert.issuer,
+        organizationalUnits: getDistinguishedNameValues(
+          partialCert.subject,
+          'OU',
+        ),
+        commonName:
+          getDistinguishedNameValues(partialCert.subject, 'CN')[0] ?? null,
+        isSelfSigned: partialCert.subject === partialCert.issuer,
+      });
+
+      seen.add(fingerprint);
+      idx = candidate.end - 1;
     }
   }
 

@@ -11,6 +11,7 @@ import {
 } from './certificateChain';
 
 const testImagePath = path.resolve(process.cwd(), 'test.jpg');
+const testImage2Path = path.resolve(process.cwd(), 'test2.jpg');
 
 describe('lib/certificateChain', () => {
   it('extracts embedded certificates from a signed asset', () => {
@@ -53,5 +54,18 @@ describe('lib/certificateChain', () => {
     expect(
       chains.map((chain) => chain.length).sort((left, right) => left - right),
     ).toEqual([3, 3]);
+  });
+
+  it('extracts partially-decodable intermediate certificates', () => {
+    const bytes = fs.readFileSync(testImage2Path);
+    const certs = extractEmbeddedCertificates(bytes);
+    const chain = selectSigningCertificateChain(bytes);
+
+    expect(certs).toHaveLength(6);
+    expect(chain?.map((cert) => cert.commonName)).toEqual([
+      'example.com',
+      'did:key:zDnaeu6EWDfXXhu4kG6CHVRd4XVdz4Fxn5wCMdyeT9SmcrzDF',
+      'did:key:zDnaeaZTza91NcTeKdWdJbVqE9VtKQT7n58jRX6bCZUUDAF3K',
+    ]);
   });
 });
