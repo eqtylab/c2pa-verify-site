@@ -19,7 +19,6 @@
 
   const explorerOrigin =
     'https://explorer-git-feature-iframe-eqtylab.vercel.app';
-  const parentOrigin = window.location.origin;
 
   function setStatus(message: string) {
     status = message;
@@ -31,7 +30,7 @@
     const left = (window.screen.width - width) / 2;
     const top = (window.screen.height - height) / 2;
 
-    const url = `${explorerOrigin}/?appmode=iframe&parent_origin=${encodeURIComponent(parentOrigin)}`;
+    const url = `${explorerOrigin}/?appmode=iframe`;
 
     popupWindow = window.open(
       url,

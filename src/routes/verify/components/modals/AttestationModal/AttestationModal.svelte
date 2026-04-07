@@ -46,10 +46,10 @@
 </script>
 
 {#if isOpen}
-  <BaseModal label="EQTY Attestation">
+  <BaseModal label="EqtyLab Provenance">
     <div class="m-2 w-[min(42rem,calc(100vw-2rem))] rounded bg-white p-7">
       <div class="mb-5 border-b-2 pb-5">
-        <BodyBold><h2>EQTY Attestation</h2></BodyBold>
+        <BodyBold><h2>EqtyLab Provenance</h2></BodyBold>
       </div>
 
       <div class="space-y-5">
@@ -103,9 +103,8 @@
         {#if manifest}
           <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
             <Body>
-              Download the embedded <span class="font-bold"
-                >io.eqtylab.provenance</span>
-              assertion as JSON.
+              View or download the provenance manifest data for detailed
+              inspection.
             </Body>
           </div>
         {/if}
@@ -117,13 +116,13 @@
             size="m"
             treatment="outline"
             variant="secondary"
-            on:click={handleViewLineageGraph}>View Lineage Graph</Button>
+            on:click={handleViewLineageGraph}
+            >View Manifest Lineage Graph</Button>
           <Button
             size="m"
             treatment="outline"
             variant="secondary"
-            on:click={handleDownloadManifest}
-            >Download io.eqtylab.provenance</Button>
+            on:click={handleDownloadManifest}>Download Manifest</Button>
         {/if}
         <Button size="m" on:click={closeModal}>Close</Button>
       </div>
