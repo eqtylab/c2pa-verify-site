@@ -16,6 +16,8 @@
   $: statusCode = validationResult?.statusCode;
   $: hasCredentials =
     !!assetData.manifestData?.signatureInfo?.cert_serial_number;
+  $: unrecognizedLabel =
+    assetData.unrecognizedLabelOverride ?? $_('assetInfo.unrecognized');
 </script>
 
 <div class="flex min-w-0 items-center">
@@ -42,7 +44,7 @@
         <Truncate
           ><Body
             ><span class="text-gray-900" title={$_('assetInfo.invalid')}
-              >{$_('assetInfo.unrecognized')}</span
+              >{unrecognizedLabel}</span
             ></Body
           ></Truncate>
       {:else if statusCode === 'valid' && hasCredentials}
