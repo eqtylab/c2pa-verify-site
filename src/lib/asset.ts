@@ -44,10 +44,10 @@ import type { Disposable } from './types';
 const MANIFEST_STORE_MIME_TYPE = 'application/x-c2pa-manifest-store';
 const dbg = debug('lib:asset');
 
-// Extend c2pa module to include eqty.manifest assertion type
+// Extend c2pa module to include io.eqtylab.provenance assertion type
 declare module 'c2pa' {
   interface ExtendedAssertions {
-    'eqty.manifest': unknown;
+    'io.eqtylab.provenance': unknown;
   }
 }
 
@@ -69,7 +69,7 @@ export type AssetData = {
     | {
         commonName: string;
         organizationalUnit: string | null;
-        attestationType: string | null;
+        attestationTypes: string[];
       }[]
     | null;
   attestationManifest: unknown | null;
@@ -121,7 +121,7 @@ interface EqtyAttestationInfo {
   certificates: {
     commonName: string;
     organizationalUnit: string | null;
-    attestationType: string | null;
+    attestationTypes: string[];
   }[];
   manifest: unknown | null;
 }
@@ -543,7 +543,7 @@ async function getEqtyAttestationInfo(
           return {
             commonName,
             organizationalUnit: cert.organizationalUnits[0] ?? null,
-            attestationType: getEqtyDidRegistrationType(
+            attestationTypes: getEqtyDidRegistrationTypes(
               eqtyManifestAssertion,
               commonName,
             ),
@@ -557,7 +557,7 @@ async function getEqtyAttestationInfo(
 }
 
 function getEqtyManifestAssertion(manifest: Manifest): unknown | null {
-  const assertions = manifest.assertions.get('eqty.manifest');
+  const assertions = manifest.assertions.get('io.eqtylab.provenance');
 
   if (!assertions || assertions.length === 0) {
     return null;
@@ -566,20 +566,19 @@ function getEqtyManifestAssertion(manifest: Manifest): unknown | null {
   return assertions.map((assertion) => assertion?.data).find(Boolean) ?? null;
 }
 
-function getEqtyDidRegistrationType(
-  manifest: unknown,
-  did: string,
-): string | null {
+function getEqtyDidRegistrationTypes(manifest: unknown, did: string): string[] {
   if (!manifest || typeof manifest !== 'object') {
-    return null;
+    return [];
   }
 
   const statements = (manifest as { statements?: Record<string, unknown> })
     .statements;
 
   if (!statements || typeof statements !== 'object') {
-    return null;
+    return [];
   }
+
+  const types = new Set<string>();
 
   for (const statement of Object.values(statements)) {
     if (!statement || typeof statement !== 'object') {
@@ -600,8 +599,12 @@ function getEqtyDidRegistrationType(
       continue;
     }
 
-    return didRegistration.vcomp?.['@type'] ?? null;
+    const type = didRegistration.vcomp?.['@type'];
+
+    if (type) {
+      types.add(type);
+    }
   }
 
-  return null;
+  return [...types];
 }

@@ -13,7 +13,7 @@
   export let certificates: {
     commonName: string;
     organizationalUnit: string | null;
-    attestationType: string | null;
+    attestationTypes: string[];
   }[] = [];
   export let manifest: unknown | null = null;
 
@@ -29,7 +29,7 @@
     const link = document.createElement('a');
 
     link.href = url;
-    link.download = 'eqty.manifest.json';
+    link.download = 'io.eqtylab.provenance.json';
     link.click();
 
     URL.revokeObjectURL(url);
@@ -70,14 +70,18 @@
                     <span class="break-all text-gray-900"
                       >{certificate.commonName}</span>
                   </Body>
-                  {#if certificate.attestationType}
+                  {#if certificate.attestationTypes.length > 0}
                     <div class="mt-2 rounded-lg bg-white/70 px-3 py-2">
                       <div
                         class="text-[0.65rem] font-bold uppercase tracking-[0.08em] text-blue-900">
-                        Attestation Type
+                        Attestation Type{certificate.attestationTypes.length > 1
+                          ? 's'
+                          : ''}
                       </div>
                       <div class="break-all text-sm text-gray-900">
-                        {certificate.attestationType}
+                        {#each certificate.attestationTypes as attestationType}
+                          <div>{attestationType}</div>
+                        {/each}
                       </div>
                     </div>
                   {/if}
@@ -90,7 +94,8 @@
         {#if manifest}
           <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
             <Body>
-              Download the embedded <span class="font-bold">eqty.manifest</span>
+              Download the embedded <span class="font-bold"
+                >io.eqtylab.provenance</span>
               assertion as JSON.
             </Body>
           </div>
@@ -103,7 +108,8 @@
             size="m"
             treatment="outline"
             variant="secondary"
-            on:click={handleDownloadManifest}>Download eqty.manifest</Button>
+            on:click={handleDownloadManifest}
+            >Download io.eqtylab.provenance</Button>
         {/if}
         <Button size="m" on:click={closeModal}>Close</Button>
       </div>
