@@ -6,8 +6,9 @@
   import Body from '$src/components/typography/Body.svelte';
   import BodyBold from '$src/components/typography/BodyBold.svelte';
   import Button from '$src/routes/verify/components/Button/Button.svelte';
-  import { closeModal } from 'svelte-modals';
+  import { closeModal, openModal } from 'svelte-modals';
   import BaseModal from '../BaseModal/BaseModal.svelte';
+  import LineageGraphModal from '../LineageGraphModal/LineageGraphModal.svelte';
 
   export let isOpen: boolean;
   export let certificates: {
@@ -33,6 +34,14 @@
     link.click();
 
     URL.revokeObjectURL(url);
+  }
+
+  function handleViewLineageGraph() {
+    if (!manifest) {
+      return;
+    }
+
+    openModal(LineageGraphModal, { manifest });
   }
 </script>
 
@@ -104,6 +113,11 @@
 
       <div class="flex justify-end gap-2 pt-8">
         {#if manifest}
+          <Button
+            size="m"
+            treatment="outline"
+            variant="secondary"
+            on:click={handleViewLineageGraph}>View Lineage Graph</Button>
           <Button
             size="m"
             treatment="outline"

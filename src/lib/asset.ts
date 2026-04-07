@@ -563,7 +563,35 @@ function getEqtyManifestAssertion(manifest: Manifest): unknown | null {
     return null;
   }
 
-  return assertions.map((assertion) => assertion?.data).find(Boolean) ?? null;
+  // Find the first assertion with data
+  const assertionData = assertions
+    .map((assertion) => assertion?.data)
+    .find(Boolean);
+
+  if (!assertionData) {
+    return null;
+  }
+
+  // Check if we have a 'manifest' key in the data
+  const data = assertionData as { manifest?: unknown };
+
+  if (!data.manifest) {
+    return assertionData; // Return the whole data if no manifest key
+  }
+
+  // If manifest is a string, parse it as JSON
+  if (typeof data.manifest === 'string') {
+    try {
+      return JSON.parse(data.manifest);
+    } catch (e) {
+      dbg('Failed to parse manifest string as JSON:', e);
+
+      return data.manifest; // Return the string if parsing fails
+    }
+  }
+
+  // If manifest is already an object/dict, use it directly
+  return data.manifest;
 }
 
 function getEqtyDidRegistrationTypes(manifest: unknown, did: string): string[] {
